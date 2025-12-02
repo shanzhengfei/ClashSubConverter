@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>VLESS 订阅转 Clash Shadowrocket YAML</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      color: #f9fafb;
+    }
+    .subtitle {
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #9ca3af;
+    }
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    .panel {
+      flex: 1 1 360px;
+      min-width: 0;
+      background: #020617;
+      border-radius: 10px;
+      border: 1px solid #1f2937;
+      padding: 14px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .panel-title {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #e5e7eb;
+    }
+    textarea {
+      width: 100%;
+      min-height: 260px;
+      resize: vertical;
+      border-radius: 8px;
+      border: 1px solid #374151;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 10px 11px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      outline: none;
+    }
+    textarea:focus {
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px rgba(59,130,246,0.5);
+    }
+    .controls {
+      margin: 10px 0 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+    }
+    button {
+      border-radius: 999px;
+      border: 1px solid transparent;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      background: linear-gradient(135deg, #2563eb, #4f46e5);
+      color: #f9fafb;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 6px 18px rgba(37,99,235,0.5);
+      white-space: nowrap;
+    }
+    button.secondary {
+      background: #020617;
+      border-color: #374151;
+      box-shadow: none;
+      color: #e5e7eb;
+    }
+    button:active {
+      transform: translateY(1px);
+      box-shadow: 0 3px 10px rgba(37,99,235,0.5);
+    }
+    .status {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .status.error {
+      color: #f97373;
+    }
+    .status.success {
+      color: #4ade80;
+    }
+    .hint {
+      font-size: 11px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    @media (max-width: 900px) {
+      body { padding: 12px; }
+      .panel { flex: 1 1 100%; }
+    }
+  </style>
+</head>
+<body>
+  <h1>VLESS 订阅链接转 Clash Shadowrocket YAML</h1>
+  <div class="subtitle">
+    在左侧粘贴 <code>vless://</code> 链接（可多行），点击“转换为 YAML”。右侧可复制生成好的配置。
+  </div>
+  <div class="subtitle">
+    作者 <a href="https://t.me/chengzi1220" target="_blank" style="color: white; text-decoration: none;">Chengzi</a>。
+  </div>
+ 
+
+
+  <div class="container">
+    <div class="panel">
+      <div class="panel-title">输入：VLESS 链接（每行一个）</div>
+      <textarea id="input" placeholder="例如：
+vless://9664c552-5b8f-3451-b51c-95g4603e9a02@test.com:46486?type=tcp&encryption=none&security=reality&pbk=S-hGJCZ0sx_u-2fQUhJ_d9sx_4yUf6yVgaghaymg&fp=chrome&sni=redis.io&sid=830&spx=%2F&flow=xtls-rprx-vision#美国-洛杉矶"></textarea>
+      <div class="hint">
+        · 支持多行，只会解析其中的 <code>vless://</code> 链接<br>
+        · 节点名称优先使用链接末尾的 <code>#备注</code>，并自动尝试添加国旗 emoji
+      </div>
+      <div class="controls">
+        <button id="convertBtn">⚙️ 转换为 YAML</button>
+        <button id="clearBtn" class="secondary">🧹 清空输入</button>
+        <span id="status" class="status"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">输出：Clash.Meta YAML</div>
+      <textarea id="output" readonly placeholder="转换结果会显示在这里"></textarea>
+      <div class="controls">
+        <button id="copyBtn" class="secondary">📋 复制 YAML</button>
+        <span id="copyStatus" class="status"></span>
+      </div>
+      <div class="hint">
+        · 生成内容包含通用配置、DNS、代理组、规则等，<br>
+        · 你可以按需修改端口、策略组或规则。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 固定的 YAML 头部（到 proxies: 之前）
+    const YAML_HEADER = `
+mixed-port: 7890
+allow-lan: false
+mode: rule
+log-level: warning
+external-controller: 127.0.0.1:9090
+unified-delay: true
+global-client-fingerprint: chrome
+keep-alive-interval: 360
+clash-for-android:
+  append-system-dns: false
+cfw-bypass:
+  - localhost
+  - 127.*
+  - 10.*
+  - 172.16.*
+  - 192.168.*
+  - <local>
+hosts:
+  mtalk.google.com: 108.177.125.188
+dns:
+  enable: true
+  listen: 127.0.0.1:5335
+  default-nameserver: [180.184.1.1, 119.29.29.29, 223.5.5.5]
+  proxy-server-nameserver: [https://223.5.5.5/dns-query, https://doh.pub/dns-query]
+  use-hosts: true
+  use-system-hosts: true
+  enhanced-mode: fake-ip
+  fake-ip-filter: ["*.market.xiaomi.com","*.n.n.srv.nintendo.net", +.stun.playstation.net, xbox.*.*.microsoft.com, "*.msftncsi.com", "*.msftconnecttest.com", WORKGROUP, "*.lan", stun.*.*.*, stun.*.*, time.windows.com, time.nist.gov, time.apple.com, time.asia.apple.com, "*.ntp.org.cn", "*.openwrt.pool.ntp.org", time1.cloud.tencent.com, time.ustc.edu.cn, pool.ntp.org, ntp.ubuntu.com, "*.*.xboxlive.com", speedtest.cros.wr.pvp.net, stun.services.mozilla1.com, ntp.nasa.gov, captive.apple.com]
+  nameserver: [https://dns.alidns.com/dns-query, https://doh.pub/dns-query, https://223.5.5.5/dns-query]
+  nameserver-policy:
+    "geosite:bytedance":
+        - 180.184.1.1
+        - 180.184.2.2
+    "geosite:cn,apple,category-games@cn":
+        - 119.29.29.29
+        - 223.6.6.6
+        - system
+    "geosite:private":
+        - system
+proxies:
+`.trimStart();
+
+    // 固定的规则部分（从 rules: 开始，与你提供的保持一致）
+    const YAML_RULES = `
+rules:
+  - GEOSITE,cn,🎯 绕过代理
+  - GEOIP,CN,🎯 绕过代理
+  - DOMAIN-SUFFIX,drivergenius.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,foxitcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,acl4.ssr,🎯 绕过代理
+  - DOMAIN-SUFFIX,ip6-localhost,🎯 绕过代理
+  - DOMAIN-SUFFIX,ip6-loopback,🎯 绕过代理
+  - DOMAIN-SUFFIX,lan,🎯 绕过代理
+  - DOMAIN-SUFFIX,local,🎯 绕过代理
+  - DOMAIN-SUFFIX,localhost,🎯 绕过代理
+# NTP Services
+  - DOMAIN,doubao.com,🎯 绕过代理
+  - DOMAIN,www.doubao.com,🎯 绕过代理
+  - DOMAIN,time.windows.com,🎯 绕过代理
+  - DOMAIN,time.nist.gov,🎯 绕过代理
+  - DOMAIN,time.apple.com,🎯 绕过代理
+  - DOMAIN,time.asia.apple.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ntp.org.cn,🎯 绕过代理
+  - DOMAIN,ntp.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp1.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp2.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp3.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp4.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp5.tencent.com,🎯 绕过代理
+  - DOMAIN,time.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,time1.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,time2.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,time3.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,time4.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,time5.cloud.tencent.com,🎯 绕过代理
+  - DOMAIN,ntp.tuna.tsinghua.edu.cn,🎯 绕过代理
+  - DOMAIN,time.ustc.edu.cn,🎯 绕过代理
+  - DOMAIN,pool.ntp.org,🎯 绕过代理
+  - DOMAIN,ntp.ubuntu.com,🎯 绕过代理
+  - DOMAIN,ntp.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp1.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp2.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp3.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp4.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp5.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp6.aliyun.com,🎯 绕过代理
+  - DOMAIN,ntp7.aliyun.com,🎯 绕过代理
+  - DOMAIN,time1.aliyun.com,🎯 绕过代理
+  - DOMAIN,time2.aliyun.com,🎯 绕过代理
+  - DOMAIN,time3.aliyun.com,🎯 绕过代理
+  - DOMAIN,time4.aliyun.com,🎯 绕过代理
+  - DOMAIN,time5.aliyun.com,🎯 绕过代理
+  - DOMAIN,time6.aliyun.com,🎯 绕过代理
+  - DOMAIN,time7.aliyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,time.edu.cn,🎯 绕过代理
+  - DOMAIN,time1.apple.com,🎯 绕过代理
+  - DOMAIN,time2.apple.com,🎯 绕过代理
+  - DOMAIN,time3.apple.com,🎯 绕过代理
+  - DOMAIN,time4.apple.com,🎯 绕过代理
+  - DOMAIN,time5.apple.com,🎯 绕过代理
+  - DOMAIN,time6.apple.com,🎯 绕过代理
+  - DOMAIN,time7.apple.com,🎯 绕过代理
+  - IP-CIDR,0.0.0.0/8,🎯 绕过代理,no-resolve
+  - IP-CIDR,10.0.0.0/8,🎯 绕过代理,no-resolve
+  - IP-CIDR,100.64.0.0/10,🎯 绕过代理,no-resolve
+  - IP-CIDR,127.0.0.0/8,🎯 绕过代理,no-resolve
+  - IP-CIDR,172.16.0.0/12,🎯 绕过代理,no-resolve
+  - IP-CIDR,192.168.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,198.18.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,224.0.0.0/4,🎯 绕过代理,no-resolve
+  - IP-CIDR6,::1/128,🎯 绕过代理,no-resolve
+  - IP-CIDR6,fc00::/7,🎯 绕过代理,no-resolve
+  - IP-CIDR6,fe80::/10,🎯 绕过代理,no-resolve
+  - IP-CIDR6,fd00::/8,🎯 绕过代理,no-resolve
+  - DOMAIN,instant.arubanetworks.com,🎯 绕过代理
+  - DOMAIN,setmeup.arubanetworks.com,🎯 绕过代理
+  - DOMAIN,router.asus.com,🎯 绕过代理
+  - DOMAIN,www.asusrouter.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hiwifi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,leike.cc,🎯 绕过代理
+  - DOMAIN-SUFFIX,miwifi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,my.router,🎯 绕过代理
+  - DOMAIN-SUFFIX,p.to,🎯 绕过代理
+  - DOMAIN-SUFFIX,peiluyou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,phicomm.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,router.ctc,🎯 绕过代理
+  - DOMAIN-SUFFIX,routerlogin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tendawifi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zte.home,🎯 绕过代理
+  - DOMAIN-SUFFIX,tplogin.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,wifi.cmcc,🎯 绕过代理
+  - DOMAIN-SUFFIX,ol.epicgames.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dizhensubao.getui.com,🎯 绕过代理
+  - DOMAIN,dl.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,googletraveladservices.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tracking-protection.cdn.mozilla.net,🎯 绕过代理
+  - DOMAIN,origin-a.akamaihd.net,🎯 绕过代理
+  - DOMAIN,fairplay.l.qq.com,🎯 绕过代理
+  - DOMAIN,livew.l.qq.com,🎯 绕过代理
+  - DOMAIN,vd.l.qq.com,🎯 绕过代理
+  - DOMAIN,errlog.umeng.com,🎯 绕过代理
+  - DOMAIN,msg.umeng.com,🎯 绕过代理
+  - DOMAIN,msg.umengcloud.com,🎯 绕过代理
+  - DOMAIN,tracking.miui.com,🎯 绕过代理
+  - DOMAIN,app.adjust.com,🎯 绕过代理
+  - DOMAIN,bdtj.tagtic.cn,🎯 绕过代理
+  - DOMAIN,rewards.hypixel.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,koodomobile.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,koodomobile.ca,🎯 绕过代理
+  - DOMAIN-SUFFIX,13th.tech,🎯 绕过代理
+  - DOMAIN-SUFFIX,423down.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bokecc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chaipip.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chinaplay.store,🎯 绕过代理
+  - DOMAIN-SUFFIX,hrtsea.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kaikeba.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,laomo.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,mpyit.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,msftconnecttest.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,msftncsi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qupu123.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pdfwifi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhenguanyu.biz,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhenguanyu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,snapdrop.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,tebex.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,xn--fiqs8s,🎯 绕过代理
+  - DOMAIN-SUFFIX,xn--55qx5d,🎯 绕过代理
+  - DOMAIN-SUFFIX,xn--io0a7i,🎯 绕过代理
+  - DOMAIN-KEYWORD,360buy,🎯 绕过代理
+  - DOMAIN-KEYWORD,alicdn,🎯 绕过代理
+  - DOMAIN-KEYWORD,alimama,🎯 绕过代理
+  - DOMAIN-KEYWORD,alipay,🎯 绕过代理
+  - DOMAIN-KEYWORD,appzapp,🎯 绕过代理
+  - DOMAIN-KEYWORD,baidupcs,🎯 绕过代理
+  - DOMAIN-KEYWORD,bilibili,🎯 绕过代理
+  - DOMAIN-KEYWORD,ccgslb,🎯 绕过代理
+  - DOMAIN-KEYWORD,chinacache,🎯 绕过代理
+  - DOMAIN-KEYWORD,duobao,🎯 绕过代理
+  - DOMAIN-KEYWORD,jdpay,🎯 绕过代理
+  - DOMAIN-KEYWORD,moke,🎯 绕过代理
+  - DOMAIN-KEYWORD,qhimg,🎯 绕过代理
+  - DOMAIN-KEYWORD,vpimg,🎯 绕过代理
+  - DOMAIN-KEYWORD,xiami,🎯 绕过代理
+  - DOMAIN-KEYWORD,xiaomi,🎯 绕过代理
+  - DOMAIN-SUFFIX,360.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,360kuai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,360safe.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dhrest.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qhres.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qhstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qhupdate.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,so.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,4399.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,4399pk.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,5054399.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,img4399.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,58.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,1688.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliapp.org,🎯 绕过代理
+  - DOMAIN-SUFFIX,alibaba.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alibabacloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alibabausercontent.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alicdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alicloudccp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliexpress.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alikunlun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alipay.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alipayobjects.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alisoft.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliyuncdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliyuncs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliyundrive.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,aliyundrive.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,amap.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,autonavi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dingtalk.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ele.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,hichina.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mmstat.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mxhichina.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,soku.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,taobao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,taobaocdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tbcache.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tbcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tmall.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tmall.hk,🎯 绕过代理
+  - DOMAIN-SUFFIX,ucweb.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiami.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiami.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,ykimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,youku.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baidu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baidubcr.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baidupcs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baidustatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bcebos.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bdimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bdstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bdurl.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,hao123.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hao123img.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jomodns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yunjiasu-cdn.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,acg.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,acgvideo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,b23.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,bigfun.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,bigfunapp.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,biliapi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,biliapi.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,bilibili.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bilibili.co,🎯 绕过代理
+  - DOMAIN-SUFFIX,biliintl.co,🎯 绕过代理
+  - DOMAIN-SUFFIX,biligame.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,biligame.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,bilivideo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bilivideo.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,hdslb.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,im9.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,smtcdns.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,amemv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bdxiguaimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bdxiguastatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,byted-static.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytedance.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytedance.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytedns.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytednsdoc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytegoofy.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,byteimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytescm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytetos.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bytexservice.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyincdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyinpic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyinstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyinvod.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,feelgood.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,feiliao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,gifshow.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huoshan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huoshanzhibo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ibytedapm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iesdouyin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ixigua.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kspkg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pstatp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,snssdk.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiao13.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaoapi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaocdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaocdn.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaocloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaohao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaohao.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaoimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toutiaopage.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,wukong.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zijieapi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zijieimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zjbyte.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zjcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cctv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cctvpic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,livechina.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,21cn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,didialift.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,didiglobal.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,udache.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyu.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyuscdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,douyutv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,epicgames.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,epicgames.dev,🎯 绕过代理
+  - DOMAIN-SUFFIX,helpshift.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,paragon.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,unrealengine.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dbankcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hc-cdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hicloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hihonor.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huawei.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huaweicloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huaweishop.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,hwccpc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,vmall.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,vmallres.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,allawnfs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,allawno.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,allawntech.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,coloros.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,heytap.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,heytapcs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,heytapdownload.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,heytapimage.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,heytapmobi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,oppo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,oppoer.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,oppomobile.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iflyink.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iflyrec.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iflytek.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,71.am,🎯 绕过代理
+  - DOMAIN-SUFFIX,71edge.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iqiyi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iqiyipic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ppsimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiyi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiyipic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qy.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,360buy.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,360buyimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jcloudcs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jd.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jd.hk,🎯 绕过代理
+  - DOMAIN-SUFFIX,jdcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jdpay.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,paipai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,iciba.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ksosoft.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ksyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kuaishou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yximgs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meitu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meitudata.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meitustat.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meipai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,le.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lecloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letvcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letvimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letvlive.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letvstore.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hitv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hunantv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mgtv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,duokan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mi-img.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,miui.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaomi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaomi.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaomicp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,126.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,126.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,127.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,163.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,163yun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lofter.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,netease.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ydstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,youdao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pplive.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pptv.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pinduoduo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yangkeduo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,leju.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,miaopai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sina.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sina.com.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,sina.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,sinaapp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sinaapp.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,sinaimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sinaimg.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,weibo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weibo.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,weibocdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weibocdn.cn,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaoka.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,go2map.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sogo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sogou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sogoucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sohu-inc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sohu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sohucs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sohuno.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sohurdc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,v-56.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,playstation.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,playstation.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,playstationnetwork.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sony.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sonyentertainmentnetwork.com,🎯 绕过代理
+  - DOMAIN,dl.steam.clngaa.com,🎯 绕过代理
+  - DOMAIN,dl.steam.ksyna.com,🎯 绕过代理
+  - DOMAIN,st.dl.bscstorage.net,🎯 绕过代理
+  - DOMAIN,st.dl.eccdnx.com,🎯 绕过代理
+  - DOMAIN,st.dl.pinyuncloud.com,🎯 绕过代理
+  - DOMAIN,xz.pphimalayanrt.com,🎯 绕过代理
+  - DOMAIN,steampipe.steamcontent.tnkjmec.com,🎯 绕过代理
+  - DOMAIN,steampowered.com.8686c.com,🎯 绕过代理
+  - DOMAIN,steamstatic.com.8686c.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,foxmail.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,gtimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,idqqimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,igamecj.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,myapp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,myqcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qq.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qqmail.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qqurl.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,smtcdns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,smtcdns.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,soso.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tencent-cloud.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,tencent.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tencentmind.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tenpay.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,wechat.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weixin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weiyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,appsimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,appvipshop.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,vip.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,vipstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ximalaya.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xmcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,00cdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,88cdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kanimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kankan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,p2cdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sandai.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,thundercdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xunlei.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,got001.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,p4pfile.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,rrys.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,rrys2020.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yyets.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zimuzu.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,zimuzu.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmz001.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmz002.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmz003.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmz004.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmz2019.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmzapi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmzapi.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,zmzfile.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,teamviewer.com,🎯 绕过代理
+  - IP-CIDR,139.220.243.27/32,🎯 绕过代理,no-resolve
+  - IP-CIDR,172.16.102.56/32,🎯 绕过代理,no-resolve
+  - IP-CIDR,185.188.32.1/28,🎯 绕过代理,no-resolve
+  - IP-CIDR,221.226.128.146/32,🎯 绕过代理,no-resolve
+  - IP-CIDR6,2a0b:b580::/48,🎯 绕过代理,no-resolve
+  - IP-CIDR6,2a0b:b581::/48,🎯 绕过代理,no-resolve
+  - IP-CIDR6,2a0b:b582::/48,🎯 绕过代理,no-resolve
+  - IP-CIDR6,2a0b:b583::/48,🎯 绕过代理,no-resolve
+  - DOMAIN-SUFFIX,baomitu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bootcss.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jiasule.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,staticfile.org,🎯 绕过代理
+  - DOMAIN-SUFFIX,upaiyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,doh.pub,🎯 绕过代理
+  - DOMAIN-SUFFIX,dns.alidns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,doh.360.cn,🎯 绕过代理
+  - IP-CIDR,1.12.12.12/32,🎯 绕过代理,no-resolve
+  - DOMAIN-SUFFIX,10010.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,115.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,12306.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,17173.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,178.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,17k.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,360doc.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,36kr.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,3dmgame.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,51cto.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,51job.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,51jobcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,56.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,8686c.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,abchina.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,abercrombie.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,acfun.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,air-matters.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,air-matters.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,aixifan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,algocasts.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,babytree.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,babytreeimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baicizhan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baidupan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,baike.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,biqudu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,biquge.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bitauto.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,bosszhipin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,c-ctrip.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,camera360.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cdnmama.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chaoxing.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,che168.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chinacache.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,chinaso.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chinaz.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,chinaz.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,chuimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cibntv.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,clouddn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cloudxns.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,cn163.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,cnblogs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cnki.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,cnmstl.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,coolapk.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,coolapkmarket.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,csdn.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,ctrip.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dangdang.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dfcfw.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dianping.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dilidili.wang,🎯 绕过代理
+  - DOMAIN-SUFFIX,douban.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,doubanio.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dpfile.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,duowan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dxycdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dytt8.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,easou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,eastday.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,eastmoney.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ecitic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,element-plus.org,🎯 绕过代理
+  - DOMAIN-SUFFIX,ewqcxz.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,fang.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,fantasy.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,feng.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,fengkongcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,fir.im,🎯 绕过代理
+  - DOMAIN-SUFFIX,frdic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,fresh-ideas.cc,🎯 绕过代理
+  - DOMAIN-SUFFIX,ganji.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ganjistatic1.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,geetest.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,geilicdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ghpym.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,godic.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,guazi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,gwdang.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,gzlzfm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,haibian.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,haosou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hollisterco.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hongxiu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huajiao.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,hupu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huxiucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,huya.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ifeng.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ifengimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,images-amazon.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,infzm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ipip.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,it168.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ithome.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ixdzs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jianguoyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jianshu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jianshu.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,jianshuapi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jiathis.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jmstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,jumei.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kaola.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,knewone.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,koowo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ksyungslb.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kuaidi100.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,kugou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lancdns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,landiannews.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lanzou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lanzoui.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lanzoux.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lemicp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,letitfly.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,lizhi.fm,🎯 绕过代理
+  - DOMAIN-SUFFIX,lizhi.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,lizhifm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,luoo.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,lvmama.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,lxdns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,maoyan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meilishuo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meituan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,meituan.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,meizu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,migucloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,miguvideo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mobike.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mogu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mogucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mogujie.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,moji.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,moke.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,msstatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mubu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,myunlu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,nruan.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,nuomi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,onedns.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,oneplus.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,onlinedown.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,oracle.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,oschina.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,ourdvs.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,polyv.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,qbox.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,qcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qcloudcdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qdaily.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qdmm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qhimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qianqian.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qidian.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qihucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qin.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiniu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiniucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiniudn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qiushibaike.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,quanmin.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,qunar.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,qunarzz.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,realme.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,repaik.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ruguoapp.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,runoob.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sankuai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,segmentfault.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sf-express.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,shumilou.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,simplecd.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,smzdm.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,snwx.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,soufunimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,sspai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,startssl.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,suning.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,synology.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,taihe.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,th-sjy.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tianqi.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tianqistatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tianyancha.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tianyaui.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tietuku.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tiexue.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,tmiaoo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,trip.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ttmeiju.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tudou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tuniu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tuniucdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,umengcloud.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,upyun.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,uxengine.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,videocc.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,vivo.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,wandoujia.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weather.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weico.cc,🎯 绕过代理
+  - DOMAIN-SUFFIX,weidian.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weiphone.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,weiphone.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,womai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,wscdns.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xdrig.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xhscdn.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiachufang.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaohongshu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiaojukeji.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xinhuanet.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xip.io,🎯 绕过代理
+  - DOMAIN-SUFFIX,xitek.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,xiumi.us,🎯 绕过代理
+  - DOMAIN-SUFFIX,xslb.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,xueqiu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yach.me,🎯 绕过代理
+  - DOMAIN-SUFFIX,yeepay.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yhd.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yihaodianimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yinxiang.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yinyuetai.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yixia.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ys168.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yuewen.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yy.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,yystatic.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zealer.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhangzishi.cc,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhanqi.tv,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhaopin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhihu.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhimg.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhipin.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhongsou.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,zhuihd.com,🎯 绕过代理
+  - DOMAIN,assets1.xboxlive.cn,🎯 绕过代理
+  - DOMAIN,assets2.xboxlive.cn,🎯 绕过代理
+  - DOMAIN,cdn-ali.content.steamchina.com,🎯 绕过代理
+  - DOMAIN,cdn-qc.content.steamchina.com,🎯 绕过代理
+  - DOMAIN,cdn-ws.content.steamchina.com,🎯 绕过代理
+  - DOMAIN,dl.delivery.mp.microsoft.com,🎯 绕过代理
+  - DOMAIN,dl.steam.clngaa.com,🎯 绕过代理
+  - DOMAIN,epicgames-download1-1251447533.file.myqcloud.com,🎯 绕过代理
+  - DOMAIN,st.dl.bscstorage.net,🎯 绕过代理
+  - DOMAIN,st.dl.eccdnx.com,🎯 绕过代理
+  - DOMAIN,steampipe.steamcontent.tnkjmec.com,🎯 绕过代理
+  - DOMAIN,tlu.dl.delivery.mp.microsoft.com,🎯 绕过代理
+  - DOMAIN,trts.baishancdnx.cn,🎯 绕过代理
+  - DOMAIN,uplaypc-s-ubisoft.cdn.ubionline.com.cn,🎯 绕过代理
+  - DOMAIN,xz.pphimalayanrt.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,pdl.wow.battlenet.com.cn,🎯 绕过代理
+
+  - DOMAIN-SUFFIX,265.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,2mdn.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt1-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt2-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt3-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt4-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt5-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt6-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt7-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,alt8-mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,app-measurement.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,cache.pack.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,clickserve.dartsearch.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,crl.pki.goog,🎯 绕过代理
+  - DOMAIN-SUFFIX,dl.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,dl.l.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,googletagmanager.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,googletagservices.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,gtm.oasisfeng.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,mtalk.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ocsp.pki.goog,🎯 绕过代理
+  - DOMAIN-SUFFIX,recaptcha.net,🎯 绕过代理
+  - DOMAIN-SUFFIX,safebrowsing-cache.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,settings.crashlytics.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,ssl-google-analytics.l.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,toolbarqueries.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tools.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,tools.l.google.com,🎯 绕过代理
+  - DOMAIN-SUFFIX,www-googletagmanager.l.google.com,🎯 绕过代理
+
+  - DOMAIN-SUFFIX,cn,🎯 绕过代理
+  - IP-CIDR,8.128.0.0/10,🎯 绕过代理,no-resolve
+  - IP-CIDR,8.208.0.0/12,🎯 绕过代理,no-resolve
+  - IP-CIDR,14.1.112.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,41.222.240.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,41.223.119.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,43.242.168.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.112.212.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.52.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.56.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.74.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.76.0.0/14,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.80.0.0/12,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.235.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.236.0.0/14,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.240.0.0/14,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.244.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.246.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.250.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.252.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,47.254.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,59.82.0.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,59.82.240.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,59.82.248.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,72.254.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.38.56.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.52.76.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.206.40.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,110.76.21.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,110.76.23.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,112.125.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.251.64.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.38.208.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.38.224.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.42.224.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.95.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,140.205.1.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,140.205.122.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,147.139.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,149.129.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,155.102.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,161.117.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,163.181.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,170.33.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,198.11.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,205.204.96.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,19.28.0.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.40.192.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,49.51.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,62.234.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,94.191.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.7.28.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.116.50.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.231.60.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,109.244.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,111.30.128.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,111.30.136.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,111.30.139.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,111.30.140.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,115.159.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.28.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,120.88.56.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,121.51.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,129.28.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,129.204.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,129.211.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,132.232.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,134.175.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,146.56.192.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,148.70.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,150.109.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,152.136.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,162.14.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,162.62.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,170.106.130.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,182.254.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,188.131.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.195.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.205.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,210.4.138.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,211.152.128.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,211.152.132.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,211.152.148.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,212.64.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,212.129.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.113.192.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,63.217.23.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,63.243.252.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.235.44.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,104.193.88.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,106.12.0.0/15,🎯 绕过代理,no-resolve
+  - IP-CIDR,114.28.224.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.63.192.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,180.76.0.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,180.76.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,182.61.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,185.10.104.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,202.46.48.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.90.238.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,43.254.0.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.249.212.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,49.4.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,78.101.192.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,78.101.224.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,81.52.161.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,85.97.220.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.31.200.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.69.140.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.218.216.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,114.115.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,114.116.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.63.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.66.184.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.96.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.128.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.136.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.141.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.142.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.243.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.244.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,116.71.251.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,117.78.0.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.3.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.8.0.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,119.8.32.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,121.36.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,121.36.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,121.37.0.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,122.112.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.0.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.64.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.100.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.104.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.112.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.192.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.224.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.240.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.9.248.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.128.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.160.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.164.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.168.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.176.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,139.159.192.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.0.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.64.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.79.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.80.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.96.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.112.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.125.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.192.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.223.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,159.138.224.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,168.195.92.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,185.176.76.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.199.0.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.210.163.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.252.1.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.252.2.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.252.4.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,197.252.8.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,200.32.52.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,200.32.54.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,200.32.57.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.0.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.4.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.8.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.11.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.13.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.20.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.22.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.24.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.26.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.29.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.33.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.38.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.40.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.43.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.48.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,203.135.50.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,42.186.0.0/16,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.127.128.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.195.24.0/24,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.253.132.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.253.240.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,45.254.48.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,59.111.0.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,59.111.128.0/17,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.71.120.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.71.128.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.71.196.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.71.200.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.12.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.18.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.24.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.28.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.38.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.40.0/23,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.44.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.48.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.72.128.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.74.24.0/21,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.74.48.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.126.92.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.129.252.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.131.252.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.135.240.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,103.196.64.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,106.2.32.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,106.2.64.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,114.113.196.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,114.113.200.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,115.236.112.0/20,🎯 绕过代理,no-resolve
+  - IP-CIDR,115.238.76.0/22,🎯 绕过代理,no-resolve
+  - IP-CIDR,123.58.160.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,223.252.192.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,101.198.128.0/18,🎯 绕过代理,no-resolve
+  - IP-CIDR,101.198.192.0/19,🎯 绕过代理,no-resolve
+  - IP-CIDR,101.199.196.0/22,🎯 绕过代理,no-resolve
+
+  - DOMAIN,alt1-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt2-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt3-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt4-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt5-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt6-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt7-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,alt8-mtalk.google.com,📢 谷歌FCM
+  - DOMAIN,mtalk.google.com,📢 谷歌FCM
+  - IP-CIDR,64.233.177.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,64.233.186.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,64.233.187.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,64.233.188.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,64.233.189.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.23.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.24.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.28.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.127.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.137.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.203.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.204.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,74.125.206.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,108.177.125.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,142.250.4.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,142.250.10.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,142.250.31.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,142.250.96.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,172.217.194.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,172.217.218.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,172.217.219.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,172.253.63.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,172.253.122.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,173.194.175.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,173.194.218.188/32,📢 谷歌FCM,no-resolve
+  - IP-CIDR,209.85.233.188/32,📢 谷歌FCM,no-resolve
+  - DOMAIN-SUFFIX,t.me,📲 电报信息
+  - DOMAIN-SUFFIX,tdesktop.com,📲 电报信息
+  - DOMAIN-SUFFIX,telegra.ph,📲 电报信息
+  - DOMAIN-SUFFIX,telegram.me,📲 电报信息
+  - DOMAIN-SUFFIX,telegram.org,📲 电报信息
+  - DOMAIN-SUFFIX,telesco.pe,📲 电报信息
+  - DOMAIN,api.swiftgram.app,📲 电报信息
+  - DOMAIN-SUFFIX,mbrx.app,📲 电报信息
+  - IP-CIDR,91.108.0.0/16,📲 电报信息,no-resolve
+  - IP-CIDR,109.239.140.0/24,📲 电报信息,no-resolve
+  - IP-CIDR,149.154.160.0/20,📲 电报信息,no-resolve
+  - IP-CIDR6,2001:67c:4e8::/48,📲 电报信息,no-resolve
+  - IP-CIDR6,2001:b28:f23d::/48,📲 电报信息,no-resolve
+  - IP-CIDR6,2001:b28:f23f::/48,📲 电报信息,no-resolve
+  - DOMAIN-SUFFIX,edgedatg.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,go.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,abematv.akamaized.net,🌍 国外媒体
+  - DOMAIN,api-abematv.bucketeer.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,abema-tv.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,abema.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,abema.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,ameba.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,hayabusa.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,hayabusa.media,🌍 国外媒体
+  - DOMAIN-SUFFIX,c4assets.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,channel4.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,avoddashs,🌍 国外媒体
+  - DOMAIN,atv-ps.amazon.com,🌍 国外媒体
+  - DOMAIN,avodmp4s3ww-a.akamaihd.net,🌍 国外媒体
+  - DOMAIN,d1v5ir2lpwr8os.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d1xfray82862hr.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d22qjgkvxw22r6.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d25xi40x97liuc.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d27xxe7juh1us6.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d3196yreox78o9.cloudfront.net,🌍 国外媒体
+  - DOMAIN,dmqdd6hw24ucf.cloudfront.net,🌍 国外媒体
+  - DOMAIN,ktpx.amazon.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,aboutamazon.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,aiv-cdn.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,aiv-delivery.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,amazon.jobs,🌍 国外媒体
+  - DOMAIN-SUFFIX,amazontools.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,amazontours.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,amazonuniversity.jobs,🌍 国外媒体
+  - DOMAIN-SUFFIX,amazonvideo.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,media-amazon.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,pv-cdn.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,seattlespheres.com,🌍 国外媒体
+  - DOMAIN,gspe1-ssl.ls.apple.com,🌍 国外媒体
+  - DOMAIN,np-edge.itunes.apple.com,🌍 国外媒体
+  - DOMAIN,play-edge.itunes.apple.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tv.apple.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,bbcfmt,🌍 国外媒体
+  - DOMAIN-KEYWORD,uk-live,🌍 国外媒体
+  - DOMAIN,aod-dash-uk-live.akamaized.net,🌍 国外媒体
+  - DOMAIN,aod-hls-uk-live.akamaized.net,🌍 国外媒体
+  - DOMAIN,vod-dash-uk-live.akamaized.net,🌍 国外媒体
+  - DOMAIN,vod-thumb-uk-live.akamaized.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbc.co,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbc.co.uk,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbc.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbc.net.uk,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbcfmt.hs.llnwd.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbci.co,🌍 国外媒体
+  - DOMAIN-SUFFIX,bbci.co.uk,🌍 国外媒体
+  - DOMAIN-SUFFIX,bidi.net.uk,🌍 国外媒体
+  - DOMAIN,bahamut.akamaized.net,🌍 国外媒体
+  - DOMAIN,gamer-cds.cdn.hinet.net,🌍 国外媒体
+  - DOMAIN,gamer2-cds.cdn.hinet.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,bahamut.com.tw,🌍 国外媒体
+  - DOMAIN-SUFFIX,gamer.com.tw,🌍 国外媒体
+  - DOMAIN-SUFFIX,bilibili.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,bstarstatic.com,🌍 国外媒体
+  - DOMAIN,pic-bstarstatic.akamaized.net,🌍 国外媒体
+  - DOMAIN-KEYWORD,voddazn,🌍 国外媒体
+  - DOMAIN,d151l6v8er5bdm.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,d151l6v8er5bdm.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,d1sgwhnao7452x.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,dazn-api.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,dazn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,dazndn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,dcblivedazn.akamaized.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,indazn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,indaznlab.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,sentry.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,deezer.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,dzcdn.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,disco-api.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,discovery.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,uplynk.com,🌍 国外媒体
+  - DOMAIN,cdn.registerdisney.go.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,adobedtm.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,bam.nr-data.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,bamgrid.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,braze.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,cdn.optimizely.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,cdn.registerdisney.go.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,cws.conviva.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,d9.flashtalking.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,disney-plus.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,disney-portal.my.onetrust.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,disney.demdex.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,disney.my.sentry.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,disneyplus.bn5x.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,disneyplus.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,disneyplus.com.ssl.sc.omtrdc.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,disneystreaming.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,dssott.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,execute-api.us-east-1.amazonaws.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,js-agent.newrelic.com,🌍 国外媒体
+  - DOMAIN,bcbolt446c5271-a.akamaihd.net,🌍 国外媒体
+  - DOMAIN,content.jwplatform.com,🌍 国外媒体
+  - DOMAIN,edge.api.brightcove.com,🌍 国外媒体
+  - DOMAIN,videos-f.jwpsrv.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,encoretvb.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,fox.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,foxdcg.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,uplynk.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbo.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbogo.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbomax.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbomaxcdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbonow.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,hbogoasia,🌍 国外媒体
+  - DOMAIN,44wilhpljf.execute-api.ap-southeast-1.amazonaws.com,🌍 国外媒体
+  - DOMAIN,bcbolthboa-a.akamaihd.net,🌍 国外媒体
+  - DOMAIN,cf-images.ap-southeast-1.prod.boltdns.net,🌍 国外媒体
+  - DOMAIN,dai3fd1oh325y.cloudfront.net,🌍 国外媒体
+  - DOMAIN,hboasia1-i.akamaihd.net,🌍 国外媒体
+  - DOMAIN,hboasia2-i.akamaihd.net,🌍 国外媒体
+  - DOMAIN,hboasia3-i.akamaihd.net,🌍 国外媒体
+  - DOMAIN,hboasia4-i.akamaihd.net,🌍 国外媒体
+  - DOMAIN,hboasia5-i.akamaihd.net,🌍 国外媒体
+  - DOMAIN,hboasialive.akamaized.net,🌍 国外媒体
+  - DOMAIN,hbogoprod-vod.akamaized.net,🌍 国外媒体
+  - DOMAIN,hbolb.onwardsmg.com,🌍 国外媒体
+  - DOMAIN,hbounify-prod.evergent.com,🌍 国外媒体
+  - DOMAIN,players.brightcove.net,🌍 国外媒体
+  - DOMAIN,s3-ap-southeast-1.amazonaws.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hboasia.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbogoasia.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hbogoasia.hk,🌍 国外媒体
+  - DOMAIN-SUFFIX,5itv.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,ocnttv.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,cws-hulu.conviva.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hulu.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hulu.hb.omtrdc.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,hulu.sc.omtrdc.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,huluad.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,huluim.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,hulustream.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,happyon.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,hjholdings.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,hulu.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,prod.hjholdings.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,streaks.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,yb.uncn.jp,🌍 国外媒体
+  - DOMAIN,itvpnpmobile-a.akamaihd.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,itv.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,itvstatic.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,jooxweb-api,🌍 国外媒体
+  - DOMAIN-SUFFIX,joox.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,japonx,🌍 国外媒体
+  - DOMAIN-KEYWORD,japronx,🌍 国外媒体
+  - DOMAIN-SUFFIX,japonx.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,japonx.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,japonx.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,japonx.vip,🌍 国外媒体
+  - DOMAIN-SUFFIX,japronx.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,japronx.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,japronx.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,japronx.vip,🌍 国外媒体
+  - DOMAIN-SUFFIX,kfs.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,kkbox.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,kkbox.com.tw,🌍 国外媒体
+  - DOMAIN,kktv-theater.kk.stream,🌍 国外媒体
+  - DOMAIN,theater-kktv.cdn.hinet.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,kktv.com.tw,🌍 国外媒体
+  - DOMAIN-SUFFIX,kktv.me,🌍 国外媒体
+  - DOMAIN,litvfreemobile-hichannel.cdn.hinet.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,litv.tv,🌍 国外媒体
+  - DOMAIN,d3c7rimkq79yfu.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,d3c7rimkq79yfu.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,linetv.tw,🌍 国外媒体
+  - DOMAIN-SUFFIX,profile.line-scdn.net,🌍 国外媒体
+  - DOMAIN,d349g9zuie06uo.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,channel5.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,my5.tv,🌍 国外媒体
+  - DOMAIN-KEYWORD,nowtv100,🌍 国外媒体
+  - DOMAIN-KEYWORD,rthklive,🌍 国外媒体
+  - DOMAIN,mytvsuperlimited.hb.omtrdc.net,🌍 国外媒体
+  - DOMAIN,mytvsuperlimited.sc.omtrdc.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,mytvsuper.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tvb.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,apiproxy-device-prod-nlb-,🌍 国外媒体
+  - DOMAIN-KEYWORD,dualstack.apiproxy-,🌍 国外媒体
+  - DOMAIN-KEYWORD,netflixdnstest,🌍 国外媒体
+  - DOMAIN,netflix.com.edgesuite.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,fast.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflix.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflix.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest0.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest1.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest2.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest3.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest4.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest5.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest6.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest7.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest8.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,netflixdnstest9.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,nflxext.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,nflximg.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,nflximg.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,nflxso.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,nflxvideo.net,🌍 国外媒体
+  - IP-CIDR,8.41.4.0/24,🌍 国外媒体,no-resolve
+  - IP-CIDR,23.246.0.0/18,🌍 国外媒体,no-resolve
+  - IP-CIDR,37.77.184.0/21,🌍 国外媒体,no-resolve
+  - IP-CIDR,38.72.126.0/24,🌍 国外媒体,no-resolve
+  - IP-CIDR,45.57.0.0/17,🌍 国外媒体,no-resolve
+  - IP-CIDR,64.120.128.0/17,🌍 国外媒体,no-resolve
+  - IP-CIDR,66.197.128.0/17,🌍 国外媒体,no-resolve
+  - IP-CIDR,69.53.224.0/19,🌍 国外媒体,no-resolve
+  - IP-CIDR,103.87.204.0/22,🌍 国外媒体,no-resolve
+  - IP-CIDR,108.175.32.0/20,🌍 国外媒体,no-resolve
+  - IP-CIDR,185.2.220.0/22,🌍 国外媒体,no-resolve
+  - IP-CIDR,185.9.188.0/22,🌍 国外媒体,no-resolve
+  - IP-CIDR,192.173.64.0/18,🌍 国外媒体,no-resolve
+  - IP-CIDR,198.38.96.0/19,🌍 国外媒体,no-resolve
+  - IP-CIDR,198.45.48.0/20,🌍 国外媒体,no-resolve
+  - IP-CIDR,203.75.84.0/24,🌍 国外媒体,no-resolve
+  - IP-CIDR,207.45.72.0/22,🌍 国外媒体,no-resolve
+  - IP-CIDR,208.75.76.0/22,🌍 国外媒体,no-resolve
+  - DOMAIN-SUFFIX,dmc.nico,🌍 国外媒体
+  - DOMAIN-SUFFIX,nicovideo.jp,🌍 国外媒体
+  - DOMAIN-SUFFIX,nimg.jp,🌍 国外媒体
+  - DOMAIN-KEYWORD,nivod,🌍 国外媒体
+  - DOMAIN-SUFFIX,biggggg.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,mudvod.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,nbys.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,nbys1.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,nbyy.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,newpppp.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,nivod.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,nivodi.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,nivodz.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,vod360.net,🌍 国外媒体
+  - DOMAIN-KEYWORD,olevod,🌍 国外媒体
+  - DOMAIN-SUFFIX,haiwaikan.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,iole.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,olehd.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,olelive.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,olevod.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,olevod.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,olevod.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,olevodtv.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,openai,🌍 国外媒体
+  - DOMAIN-SUFFIX,auth0.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,chatgpt.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,client-api.arkoselabs.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,events.statsigapi.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,featuregates.org,🌍 国外媒体
+  - DOMAIN-SUFFIX,identrust.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,intercom.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,intercomcdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,oaistatic.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,oaiusercontent.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,openai.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,openaiapi-site.azureedge.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,sentry.io,🌍 国外媒体
+  - DOMAIN-SUFFIX,stripe.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,pbs.org,🌍 国外媒体
+  - DOMAIN-SUFFIX,pandora.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,phncdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,phprcdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,pornhub.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,pornhubpremium.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,qobuz.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,p-cdn.us,🌍 国外媒体
+  - DOMAIN-SUFFIX,sndcdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,soundcloud.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,-spotify-,🌍 国外媒体
+  - DOMAIN-KEYWORD,spotify.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,pscdn.co,🌍 国外媒体
+  - DOMAIN-SUFFIX,scdn.co,🌍 国外媒体
+  - DOMAIN-SUFFIX,spoti.fi,🌍 国外媒体
+  - DOMAIN-SUFFIX,spotify.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,spotifycdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,spotifycdn.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,tidal-cms.s3.amazonaws.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tidal.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tidalhifi.com,🌍 国外媒体
+  - DOMAIN,hamifans.emome.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,skyking.com.tw,🌍 国外媒体
+  - DOMAIN-KEYWORD,tiktokcdn,🌍 国外媒体
+  - DOMAIN-SUFFIX,byteoversea.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,ibytedtos.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,ipstatp.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,muscdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,musical.ly,🌍 国外媒体
+  - DOMAIN-SUFFIX,tik-tokapi.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tiktok.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tiktokcdn.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,tiktokv.com,🌍 国外媒体
+  - DOMAIN-KEYWORD,ttvnw,🌍 国外媒体
+  - DOMAIN-SUFFIX,ext-twitch.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,jtvnw.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,ttvnw.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,twitch-ext.rootonline.de,🌍 国外媒体
+  - DOMAIN-SUFFIX,twitch.tv,🌍 国外媒体
+  - DOMAIN-SUFFIX,twitchcdn.net,🌍 国外媒体
+  - PROCESS-NAME,com.viu.pad,🌍 国外媒体
+  - PROCESS-NAME,com.viu.phone,🌍 国外媒体
+  - PROCESS-NAME,com.vuclip.viu,🌍 国外媒体
+  - DOMAIN,api.viu.now.com,🌍 国外媒体
+  - DOMAIN,d1k2us671qcoau.cloudfront.net,🌍 国外媒体
+  - DOMAIN,d2anahhhmp1ffz.cloudfront.net,🌍 国外媒体
+  - DOMAIN,dfp6rglgjqszk.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,cognito-identity.us-east-1.amazonaws.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,d1k2us671qcoau.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,d2anahhhmp1ffz.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,dfp6rglgjqszk.cloudfront.net,🌍 国外媒体
+  - DOMAIN-SUFFIX,mobileanalytics.us-east-1.amazonaws.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,viu.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,viu.now.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,viu.tv,🌍 国外媒体
+  - DOMAIN-KEYWORD,youtube,🌍 国外媒体
+  - DOMAIN,youtubei.googleapis.com,🌍 国外媒体
+  - DOMAIN,yt3.ggpht.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,googlevideo.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,gvt2.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,withyoutube.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtu.be,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtube-nocookie.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtube.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtubeeducation.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtubegaming.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,youtubekids.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,yt.be,🌍 国外媒体
+  - DOMAIN-SUFFIX,ytimg.com,🌍 国外媒体
+  - DOMAIN,music.youtube.com,🌍 国外媒体
+  - DOMAIN-SUFFIX,1password.com,🚀 节点代理
+  - DOMAIN-SUFFIX,adguard.org,🚀 节点代理
+  - DOMAIN-SUFFIX,bit.no.com,🚀 节点代理
+  - DOMAIN-SUFFIX,btlibrary.me,🚀 节点代理
+  - DOMAIN-SUFFIX,cloudcone.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dubox.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gameloft.com,🚀 节点代理
+  - DOMAIN-SUFFIX,garena.com,🚀 节点代理
+  - DOMAIN-SUFFIX,hoyolab.com,🚀 节点代理
+  - DOMAIN-SUFFIX,inoreader.com,🚀 节点代理
+  - DOMAIN-SUFFIX,ip138.com,🚀 节点代理
+  - DOMAIN-SUFFIX,linkedin.com,🚀 节点代理
+  - DOMAIN-SUFFIX,myteamspeak.com,🚀 节点代理
+  - DOMAIN-SUFFIX,notion.so,🚀 节点代理
+  - DOMAIN-SUFFIX,ping.pe,🚀 节点代理
+  - DOMAIN-SUFFIX,reddit.com,🚀 节点代理
+  - DOMAIN-SUFFIX,teddysun.com,🚀 节点代理
+  - DOMAIN-SUFFIX,tumbex.com,🚀 节点代理
+  - DOMAIN-SUFFIX,twdvd.com,🚀 节点代理
+  - DOMAIN-SUFFIX,unsplash.com,🚀 节点代理
+  - DOMAIN-SUFFIX,buzzsprout.com,🚀 节点代理
+  - DOMAIN-SUFFIX,eu,🚀 节点代理
+  - DOMAIN-SUFFIX,hk,🚀 节点代理
+  - DOMAIN-SUFFIX,jp,🚀 节点代理
+  - DOMAIN-SUFFIX,kr,🚀 节点代理
+  - DOMAIN-SUFFIX,sg,🚀 节点代理
+  - DOMAIN-SUFFIX,tw,🚀 节点代理
+  - DOMAIN-SUFFIX,uk,🚀 节点代理
+  - DOMAIN-KEYWORD,1e100,🚀 节点代理
+  - DOMAIN-KEYWORD,abema,🚀 节点代理
+  - DOMAIN-KEYWORD,appledaily,🚀 节点代理
+  - DOMAIN-KEYWORD,avtb,🚀 节点代理
+  - DOMAIN-KEYWORD,beetalk,🚀 节点代理
+  - DOMAIN-KEYWORD,blogspot,🚀 节点代理
+  - DOMAIN-KEYWORD,dropbox,🚀 节点代理
+  - DOMAIN-KEYWORD,facebook,🚀 节点代理
+  - DOMAIN-KEYWORD,fbcdn,🚀 节点代理
+  - DOMAIN-KEYWORD,github,🚀 节点代理
+  - DOMAIN-KEYWORD,gmail,🚀 节点代理
+  - DOMAIN-KEYWORD,google,🚀 节点代理
+  - DOMAIN-KEYWORD,instagram,🚀 节点代理
+  - DOMAIN-KEYWORD,porn,🚀 节点代理
+  - DOMAIN-KEYWORD,sci-hub,🚀 节点代理
+  - DOMAIN-KEYWORD,spotify,🚀 节点代理
+  - DOMAIN-KEYWORD,telegram,🚀 节点代理
+  - DOMAIN-KEYWORD,twitter,🚀 节点代理
+  - DOMAIN-KEYWORD,whatsapp,🚀 节点代理
+  - DOMAIN-KEYWORD,youtube,🚀 节点代理
+  - DOMAIN-SUFFIX,4sqi.net,🚀 节点代理
+  - DOMAIN-SUFFIX,a248.e.akamai.net,🚀 节点代理
+  - DOMAIN-SUFFIX,adobedtm.com,🚀 节点代理
+  - DOMAIN-SUFFIX,ampproject.org,🚀 节点代理
+  - DOMAIN-SUFFIX,android.com,🚀 节点代理
+  - DOMAIN-SUFFIX,aolcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,apkmirror.com,🚀 节点代理
+  - DOMAIN-SUFFIX,apkpure.com,🚀 节点代理
+  - DOMAIN-SUFFIX,app-measurement.com,🚀 节点代理
+  - DOMAIN-SUFFIX,appspot.com,🚀 节点代理
+  - DOMAIN-SUFFIX,archive.org,🚀 节点代理
+  - DOMAIN-SUFFIX,armorgames.com,🚀 节点代理
+  - DOMAIN-SUFFIX,aspnetcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,awsstatic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,azureedge.net,🚀 节点代理
+  - DOMAIN-SUFFIX,azurewebsites.net,🚀 节点代理
+  - DOMAIN-SUFFIX,bandwagonhost.com,🚀 节点代理
+  - DOMAIN-SUFFIX,bing.com,🚀 节点代理
+  - DOMAIN-SUFFIX,bkrtx.com,🚀 节点代理
+  - DOMAIN-SUFFIX,blogcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,blogger.com,🚀 节点代理
+  - DOMAIN-SUFFIX,blogsmithmedia.com,🚀 节点代理
+  - DOMAIN-SUFFIX,blogspot.com,🚀 节点代理
+  - DOMAIN-SUFFIX,blogspot.hk,🚀 节点代理
+  - DOMAIN-SUFFIX,blogspot.jp,🚀 节点代理
+  - DOMAIN-SUFFIX,bloomberg.cn,🚀 节点代理
+  - DOMAIN-SUFFIX,bloomberg.com,🚀 节点代理
+  - DOMAIN-SUFFIX,box.com,🚀 节点代理
+  - DOMAIN-SUFFIX,cachefly.net,🚀 节点代理
+  - DOMAIN-SUFFIX,cdnst.net,🚀 节点代理
+  - DOMAIN-SUFFIX,cloudfront.net,🚀 节点代理
+  - DOMAIN-SUFFIX,comodoca.com,🚀 节点代理
+  - DOMAIN-SUFFIX,daum.net,🚀 节点代理
+  - DOMAIN-SUFFIX,deskconnect.com,🚀 节点代理
+  - DOMAIN-SUFFIX,disqus.com,🚀 节点代理
+  - DOMAIN-SUFFIX,disquscdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dropbox.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dropboxapi.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dropboxstatic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dropboxusercontent.com,🚀 节点代理
+  - DOMAIN-SUFFIX,duckduckgo.com,🚀 节点代理
+  - DOMAIN-SUFFIX,edgecastcdn.net,🚀 节点代理
+  - DOMAIN-SUFFIX,edgekey.net,🚀 节点代理
+  - DOMAIN-SUFFIX,edgesuite.net,🚀 节点代理
+  - DOMAIN-SUFFIX,eurekavpt.com,🚀 节点代理
+  - DOMAIN-SUFFIX,fastmail.com,🚀 节点代理
+  - DOMAIN-SUFFIX,firebaseio.com,🚀 节点代理
+  - DOMAIN-SUFFIX,flickr.com,🚀 节点代理
+  - DOMAIN-SUFFIX,flipboard.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gfx.ms,🚀 节点代理
+  - DOMAIN-SUFFIX,gongm.in,🚀 节点代理
+  - DOMAIN-SUFFIX,hulu.com,🚀 节点代理
+  - DOMAIN-SUFFIX,id.heroku.com,🚀 节点代理
+  - DOMAIN-SUFFIX,io.io,🚀 节点代理
+  - DOMAIN-SUFFIX,issuu.com,🚀 节点代理
+  - DOMAIN-SUFFIX,ixquick.com,🚀 节点代理
+  - DOMAIN-SUFFIX,jtvnw.net,🚀 节点代理
+  - DOMAIN-SUFFIX,kat.cr,🚀 节点代理
+  - DOMAIN-SUFFIX,kik.com,🚀 节点代理
+  - DOMAIN-SUFFIX,kobo.com,🚀 节点代理
+  - DOMAIN-SUFFIX,kobobooks.com,🚀 节点代理
+  - DOMAIN-SUFFIX,licdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,live.net,🚀 节点代理
+  - DOMAIN-SUFFIX,livefilestore.com,🚀 节点代理
+  - DOMAIN-SUFFIX,llnwd.net,🚀 节点代理
+  - DOMAIN-SUFFIX,macrumors.com,🚀 节点代理
+  - DOMAIN-SUFFIX,medium.com,🚀 节点代理
+  - DOMAIN-SUFFIX,mega.nz,🚀 节点代理
+  - DOMAIN-SUFFIX,megaupload.com,🚀 节点代理
+  - DOMAIN-SUFFIX,messenger.com,🚀 节点代理
+  - DOMAIN-SUFFIX,netdna-cdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,nintendo.net,🚀 节点代理
+  - DOMAIN-SUFFIX,nsstatic.net,🚀 节点代理
+  - DOMAIN-SUFFIX,nytstyle.com,🚀 节点代理
+  - DOMAIN-SUFFIX,overcast.fm,🚀 节点代理
+  - DOMAIN-SUFFIX,openvpn.net,🚀 节点代理
+  - DOMAIN-SUFFIX,periscope.tv,🚀 节点代理
+  - DOMAIN-SUFFIX,pinimg.com,🚀 节点代理
+  - DOMAIN-SUFFIX,pinterest.com,🚀 节点代理
+  - DOMAIN-SUFFIX,potato.im,🚀 节点代理
+  - DOMAIN-SUFFIX,prfct.co,🚀 节点代理
+  - DOMAIN-SUFFIX,pscp.tv,🚀 节点代理
+  - DOMAIN-SUFFIX,quora.com,🚀 节点代理
+  - DOMAIN-SUFFIX,resilio.com,🚀 节点代理
+  - DOMAIN-SUFFIX,sfx.ms,🚀 节点代理
+  - DOMAIN-SUFFIX,shadowsocks.org,🚀 节点代理
+  - DOMAIN-SUFFIX,slack-edge.com,🚀 节点代理
+  - DOMAIN-SUFFIX,smartdnsproxy.com,🚀 节点代理
+  - DOMAIN-SUFFIX,sndcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,soundcloud.com,🚀 节点代理
+  - DOMAIN-SUFFIX,startpage.com,🚀 节点代理
+  - DOMAIN-SUFFIX,staticflickr.com,🚀 节点代理
+  - DOMAIN-SUFFIX,symauth.com,🚀 节点代理
+  - DOMAIN-SUFFIX,symcb.com,🚀 节点代理
+  - DOMAIN-SUFFIX,symcd.com,🚀 节点代理
+  - DOMAIN-SUFFIX,textnow.com,🚀 节点代理
+  - DOMAIN-SUFFIX,textnow.me,🚀 节点代理
+  - DOMAIN-SUFFIX,thefacebook.com,🚀 节点代理
+  - DOMAIN-SUFFIX,thepiratebay.org,🚀 节点代理
+  - DOMAIN-SUFFIX,torproject.org,🚀 节点代理
+  - DOMAIN-SUFFIX,trustasiassl.com,🚀 节点代理
+  - DOMAIN-SUFFIX,tumblr.co,🚀 节点代理
+  - DOMAIN-SUFFIX,tumblr.com,🚀 节点代理
+  - DOMAIN-SUFFIX,tvb.com,🚀 节点代理
+  - DOMAIN-SUFFIX,txmblr.com,🚀 节点代理
+  - DOMAIN-SUFFIX,v2ex.com,🚀 节点代理
+  - DOMAIN-SUFFIX,vimeo.com,🚀 节点代理
+  - DOMAIN-SUFFIX,vine.co,🚀 节点代理
+  - DOMAIN-SUFFIX,vox-cdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,amazon.co.jp,🚀 节点代理
+  - DOMAIN-SUFFIX,amazon.com,🚀 节点代理
+  - DOMAIN-SUFFIX,amazonaws.com,🚀 节点代理
+  - IP-CIDR,13.32.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,13.35.0.0/17,🚀 节点代理,no-resolve
+  - IP-CIDR,18.184.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,18.194.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,18.208.0.0/13,🚀 节点代理,no-resolve
+  - IP-CIDR,18.232.0.0/14,🚀 节点代理,no-resolve
+  - IP-CIDR,52.58.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,52.74.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,52.77.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,52.84.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,52.200.0.0/13,🚀 节点代理,no-resolve
+  - IP-CIDR,54.93.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,54.156.0.0/14,🚀 节点代理,no-resolve
+  - IP-CIDR,54.226.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,54.230.156.0/22,🚀 节点代理,no-resolve
+  - DOMAIN-KEYWORD,uk-live,🚀 节点代理
+  - DOMAIN-SUFFIX,bbc.co,🚀 节点代理
+  - DOMAIN-SUFFIX,bbc.com,🚀 节点代理
+  - DOMAIN-SUFFIX,claude.ai,🚀 节点代理
+  - DOMAIN-SUFFIX,anthropic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,apache.org,🚀 节点代理
+  - DOMAIN-SUFFIX,docker.com,🚀 节点代理
+  - DOMAIN-SUFFIX,elastic.co,🚀 节点代理
+  - DOMAIN-SUFFIX,elastic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gcr.io,🚀 节点代理
+  - DOMAIN-SUFFIX,gitlab.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gitlab.io,🚀 节点代理
+  - DOMAIN-SUFFIX,jitpack.io,🚀 节点代理
+  - DOMAIN-SUFFIX,maven.org,🚀 节点代理
+  - DOMAIN-SUFFIX,medium.com,🚀 节点代理
+  - DOMAIN-SUFFIX,mvnrepository.com,🚀 节点代理
+  - DOMAIN-SUFFIX,quay.io,🚀 节点代理
+  - DOMAIN-SUFFIX,reddit.com,🚀 节点代理
+  - DOMAIN-SUFFIX,redhat.com,🚀 节点代理
+  - DOMAIN-SUFFIX,sonatype.org,🚀 节点代理
+  - DOMAIN-SUFFIX,sourcegraph.com,🚀 节点代理
+  - DOMAIN-SUFFIX,spring.io,🚀 节点代理
+  - DOMAIN-SUFFIX,spring.net,🚀 节点代理
+  - DOMAIN-SUFFIX,stackoverflow.com,🚀 节点代理
+  - DOMAIN-SUFFIX,discord.co,🚀 节点代理
+  - DOMAIN-SUFFIX,discord.com,🚀 节点代理
+  - DOMAIN-SUFFIX,discord.gg,🚀 节点代理
+  - DOMAIN-SUFFIX,discord.media,🚀 节点代理
+  - DOMAIN-SUFFIX,discordapp.com,🚀 节点代理
+  - DOMAIN-SUFFIX,discordapp.net,🚀 节点代理
+  - DOMAIN-SUFFIX,facebook.com,🚀 节点代理
+  - DOMAIN-SUFFIX,fb.com,🚀 节点代理
+  - DOMAIN-SUFFIX,fb.me,🚀 节点代理
+  - DOMAIN-SUFFIX,fbcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,fbcdn.net,🚀 节点代理
+  - IP-CIDR,31.13.24.0/21,🚀 节点代理,no-resolve
+  - IP-CIDR,31.13.64.0/18,🚀 节点代理,no-resolve
+  - IP-CIDR,45.64.40.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,66.220.144.0/20,🚀 节点代理,no-resolve
+  - IP-CIDR,69.63.176.0/20,🚀 节点代理,no-resolve
+  - IP-CIDR,69.171.224.0/19,🚀 节点代理,no-resolve
+  - IP-CIDR,74.119.76.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,103.4.96.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,129.134.0.0/17,🚀 节点代理,no-resolve
+  - IP-CIDR,157.240.0.0/17,🚀 节点代理,no-resolve
+  - IP-CIDR,173.252.64.0/18,🚀 节点代理,no-resolve
+  - IP-CIDR,179.60.192.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,185.60.216.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,204.15.20.0/22,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,github.com,🚀 节点代理
+  - DOMAIN-SUFFIX,github.io,🚀 节点代理
+  - DOMAIN-SUFFIX,githubapp.com,🚀 节点代理
+  - DOMAIN-SUFFIX,githubassets.com,🚀 节点代理
+  - DOMAIN-SUFFIX,githubusercontent.com,🚀 节点代理
+  - DOMAIN-SUFFIX,1e100.net,🚀 节点代理
+  - DOMAIN-SUFFIX,2mdn.net,🚀 节点代理
+  - DOMAIN-SUFFIX,app-measurement.net,🚀 节点代理
+  - DOMAIN-SUFFIX,g.co,🚀 节点代理
+  - DOMAIN-SUFFIX,ggpht.com,🚀 节点代理
+  - DOMAIN-SUFFIX,goo.gl,🚀 节点代理
+  - DOMAIN-SUFFIX,googleapis.cn,🚀 节点代理
+  - DOMAIN-SUFFIX,googleapis.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gstatic.cn,🚀 节点代理
+  - DOMAIN-SUFFIX,gstatic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gvt0.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gvt1.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gvt2.com,🚀 节点代理
+  - DOMAIN-SUFFIX,gvt3.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xn--ngstr-lra8j.com,🚀 节点代理
+  - DOMAIN-SUFFIX,youtu.be,🚀 节点代理
+  - DOMAIN-SUFFIX,youtube-nocookie.com,🚀 节点代理
+  - DOMAIN-SUFFIX,youtube.com,🚀 节点代理
+  - DOMAIN-SUFFIX,yt.be,🚀 节点代理
+  - DOMAIN-SUFFIX,ytimg.com,🚀 节点代理
+  - IP-CIDR,74.125.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,173.194.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,120.232.181.162/32,🚀 节点代理,no-resolve
+  - IP-CIDR,120.241.147.226/32,🚀 节点代理,no-resolve
+  - IP-CIDR,120.253.253.226/32,🚀 节点代理,no-resolve
+  - IP-CIDR,120.253.255.162/32,🚀 节点代理,no-resolve
+  - IP-CIDR,120.253.255.34/32,🚀 节点代理,no-resolve
+  - IP-CIDR,120.253.255.98/32,🚀 节点代理,no-resolve
+  - IP-CIDR,180.163.150.162/32,🚀 节点代理,no-resolve
+  - IP-CIDR,180.163.150.34/32,🚀 节点代理,no-resolve
+  - IP-CIDR,180.163.151.162/32,🚀 节点代理,no-resolve
+  - IP-CIDR,180.163.151.34/32,🚀 节点代理,no-resolve
+  - IP-CIDR,203.208.39.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,203.208.40.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,203.208.41.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,203.208.43.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,203.208.50.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,220.181.174.162/32,🚀 节点代理,no-resolve
+  - IP-CIDR,220.181.174.226/32,🚀 节点代理,no-resolve
+  - IP-CIDR,220.181.174.34/32,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,cdninstagram.com,🚀 节点代理
+  - DOMAIN-SUFFIX,instagram.com,🚀 节点代理
+  - DOMAIN-SUFFIX,instagr.am,🚀 节点代理
+  - DOMAIN-SUFFIX,kakao.com,🚀 节点代理
+  - DOMAIN-SUFFIX,kakao.co.kr,🚀 节点代理
+  - DOMAIN-SUFFIX,kakaocdn.net,🚀 节点代理
+  - IP-CIDR,1.201.0.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,27.0.236.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,103.27.148.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,103.246.56.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,110.76.140.0/22,🚀 节点代理,no-resolve
+  - IP-CIDR,113.61.104.0/22,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,lin.ee,🚀 节点代理
+  - DOMAIN-SUFFIX,line-apps.com,🚀 节点代理
+  - DOMAIN-SUFFIX,line-cdn.net,🚀 节点代理
+  - DOMAIN-SUFFIX,line-scdn.net,🚀 节点代理
+  - DOMAIN-SUFFIX,line.me,🚀 节点代理
+  - DOMAIN-SUFFIX,line.naver.jp,🚀 节点代理
+  - DOMAIN-SUFFIX,nhncorp.jp,🚀 节点代理
+  - IP-CIDR,103.2.28.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,103.2.30.0/23,🚀 节点代理,no-resolve
+  - IP-CIDR,119.235.224.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,119.235.232.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,119.235.235.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,119.235.236.0/23,🚀 节点代理,no-resolve
+  - IP-CIDR,147.92.128.0/17,🚀 节点代理,no-resolve
+  - IP-CIDR,203.104.128.0/19,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,challenges.cloudflare.com,🚀 节点代理
+  - DOMAIN-KEYWORD,1drv,🚀 节点代理
+  - DOMAIN-KEYWORD,onedrive,🚀 节点代理
+  - DOMAIN-KEYWORD,skydrive,🚀 节点代理
+  - DOMAIN-SUFFIX,livefilestore.com,🚀 节点代理
+  - DOMAIN-SUFFIX,oneclient.sfx.ms,🚀 节点代理
+  - DOMAIN-SUFFIX,onedrive.com,🚀 节点代理
+  - DOMAIN-SUFFIX,onedrive.live.com,🚀 节点代理
+  - DOMAIN-SUFFIX,photos.live.com,🚀 节点代理
+  - DOMAIN-SUFFIX,skydrive.wns.windows.com,🚀 节点代理
+  - DOMAIN-SUFFIX,spoprod-a.akamaihd.net,🚀 节点代理
+  - DOMAIN-SUFFIX,storage.live.com,🚀 节点代理
+  - DOMAIN-SUFFIX,storage.msn.com,🚀 节点代理
+  - DOMAIN-KEYWORD,porn,🚀 节点代理
+  - DOMAIN-SUFFIX,8teenxxx.com,🚀 节点代理
+  - DOMAIN-SUFFIX,ahcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,bcvcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,bongacams.com,🚀 节点代理
+  - DOMAIN-SUFFIX,chaturbate.com,🚀 节点代理
+  - DOMAIN-SUFFIX,dditscdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,livejasmin.com,🚀 节点代理
+  - DOMAIN-SUFFIX,phncdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,phprcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,pornhub.com,🚀 节点代理
+  - DOMAIN-SUFFIX,pornhubpremium.com,🚀 节点代理
+  - DOMAIN-SUFFIX,rdtcdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,redtube.com,🚀 节点代理
+  - DOMAIN-SUFFIX,sb-cd.com,🚀 节点代理
+  - DOMAIN-SUFFIX,spankbang.com,🚀 节点代理
+  - DOMAIN-SUFFIX,t66y.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xhamster.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xnxx-cdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xnxx.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xvideos-cdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,xvideos.com,🚀 节点代理
+  - DOMAIN-SUFFIX,ypncdn.com,🚀 节点代理
+  - DOMAIN-SUFFIX,pixiv.net,🚀 节点代理
+  - DOMAIN-SUFFIX,pximg.net,🚀 节点代理
+  - DOMAIN-SUFFIX,fanbox.cc,🚀 节点代理
+  - DOMAIN-SUFFIX,amplitude.com,🚀 节点代理
+  - DOMAIN-SUFFIX,firebaseio.com,🚀 节点代理
+  - DOMAIN-SUFFIX,hockeyapp.net,🚀 节点代理
+  - DOMAIN-SUFFIX,readdle.com,🚀 节点代理
+  - DOMAIN-SUFFIX,smartmailcloud.com,🚀 节点代理
+  - DOMAIN-SUFFIX,fanatical.com,🚀 节点代理
+  - DOMAIN-SUFFIX,humblebundle.com,🚀 节点代理
+  - DOMAIN-SUFFIX,underlords.com,🚀 节点代理
+  - DOMAIN-SUFFIX,valvesoftware.com,🚀 节点代理
+  - DOMAIN-SUFFIX,playartifact.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steam-chat.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steamcommunity.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steamgames.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steampowered.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steamstatic.com,🚀 节点代理
+  - DOMAIN-SUFFIX,steamstat.us,🚀 节点代理
+  - DOMAIN,steambroadcast.akamaized.net,🚀 节点代理
+  - DOMAIN,steamcommunity-a.akamaihd.net,🚀 节点代理
+  - DOMAIN,steamstore-a.akamaihd.net,🚀 节点代理
+  - DOMAIN,steamusercontent-a.akamaihd.net,🚀 节点代理
+  - DOMAIN,steamuserimages-a.akamaihd.net,🚀 节点代理
+  - DOMAIN,steampipe.akamaized.net,🚀 节点代理
+  - DOMAIN-SUFFIX,tap.io,🚀 节点代理
+  - DOMAIN-SUFFIX,taptap.tw,🚀 节点代理
+  - DOMAIN-SUFFIX,twitch.tv,🚀 节点代理
+  - DOMAIN-SUFFIX,ttvnw.net,🚀 节点代理
+  - DOMAIN-SUFFIX,jtvnw.net,🚀 节点代理
+  - DOMAIN-KEYWORD,ttvnw,🚀 节点代理
+  - DOMAIN-SUFFIX,t.co,🚀 节点代理
+  - DOMAIN-SUFFIX,twimg.co,🚀 节点代理
+  - DOMAIN-SUFFIX,twimg.com,🚀 节点代理
+  - DOMAIN-SUFFIX,twimg.org,🚀 节点代理
+  - DOMAIN-SUFFIX,t.me,🚀 节点代理
+  - DOMAIN-SUFFIX,tdesktop.com,🚀 节点代理
+  - DOMAIN-SUFFIX,telegra.ph,🚀 节点代理
+  - DOMAIN-SUFFIX,telegram.me,🚀 节点代理
+  - DOMAIN-SUFFIX,telegram.org,🚀 节点代理
+  - DOMAIN-SUFFIX,telesco.pe,🚀 节点代理
+  - IP-CIDR,91.108.0.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,109.239.140.0/24,🚀 节点代理,no-resolve
+  - IP-CIDR,149.154.160.0/20,🚀 节点代理,no-resolve
+  - IP-CIDR6,2001:67c:4e8::/48,🚀 节点代理,no-resolve
+  - IP-CIDR6,2001:b28:f23d::/48,🚀 节点代理,no-resolve
+  - IP-CIDR6,2001:b28:f23f::/48,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,terabox.com,🚀 节点代理
+  - DOMAIN-SUFFIX,teraboxcdn.com,🚀 节点代理
+  - IP-CIDR,18.194.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,34.224.0.0/12,🚀 节点代理,no-resolve
+  - IP-CIDR,54.242.0.0/15,🚀 节点代理,no-resolve
+  - IP-CIDR,50.22.198.204/30,🚀 节点代理,no-resolve
+  - IP-CIDR,208.43.122.128/27,🚀 节点代理,no-resolve
+  - IP-CIDR,108.168.174.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,173.192.231.32/27,🚀 节点代理,no-resolve
+  - IP-CIDR,158.85.5.192/27,🚀 节点代理,no-resolve
+  - IP-CIDR,174.37.243.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,158.85.46.128/27,🚀 节点代理,no-resolve
+  - IP-CIDR,173.192.222.160/27,🚀 节点代理,no-resolve
+  - IP-CIDR,184.173.128.0/17,🚀 节点代理,no-resolve
+  - IP-CIDR,158.85.224.160/27,🚀 节点代理,no-resolve
+  - IP-CIDR,75.126.150.0/16,🚀 节点代理,no-resolve
+  - IP-CIDR,69.171.235.0/16,🚀 节点代理,no-resolve
+  - DOMAIN-SUFFIX,mediawiki.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikibooks.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikidata.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikileaks.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikimedia.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikinews.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikipedia.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikiquote.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikisource.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikiversity.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wikivoyage.org,🚀 节点代理
+  - DOMAIN-SUFFIX,wiktionary.org,🚀 节点代理
+  - DOMAIN-SUFFIX,zoom.us,🚀 节点代理
+  - DOMAIN-SUFFIX,zoomgov.com,🚀 节点代理
+  - DOMAIN-SUFFIX,neulion.com,🚀 节点代理
+  - DOMAIN-SUFFIX,icntv.xyz,🚀 节点代理
+  - DOMAIN-SUFFIX,flzbcdn.xyz,🚀 节点代理
+  - DOMAIN-SUFFIX,ocnttv.com,🚀 节点代理
+  - DOMAIN-SUFFIX,vikacg.com,🚀 节点代理
+  - DOMAIN-SUFFIX,picjs.xyz,🚀 节点代理
+  - DOMAIN-SUFFIX,nodeseek.com,🚀 节点代理
+  - DOMAIN-SUFFIX,linux.do,🚀 节点代理
+  - MATCH,🐟 漏网之鱼
+`.trimStart();
+
+    // 简单字符串加引号并转义单引号
+    function q(str) {
+      return "'" + String(str).replace(/'/g, "''") + "'";
+    }
+
+    // 根据名称/域名匹配地区，只返回 "国旗 + 原始名称"
+	function prettyName(baseName, host) {
+	  const name = baseName || (host ? host : "节点");
+	  const displayLower = name.toLowerCase();
+	  const allText = (name + " " + (host || "")).trim();
+	  const allLower = allText.toLowerCase();
+
+	  let flag = "🌐";
+
+	  function matchRegion(lower, raw) {
+		// 香港
+		if (raw.includes("香港") ||
+			/\bhk\b/.test(lower) ||
+			lower.includes("hongkong") ||
+			lower.includes("hong kong")) {
+		  flag = "🇭🇰"; return true;
+		}
+		// 日本
+		if (raw.includes("日本") ||
+			/\bjp\b/.test(lower) ||
+			lower.includes("japan") ||
+			lower.includes("tokyo") ||
+			lower.includes("osaka")) {
+		  flag = "🇯🇵"; return true;
+		}
+		// 新加坡
+		if (raw.includes("新加坡") ||
+			/\bsg\b/.test(lower) ||
+			lower.includes("singapore")) {
+		  flag = "🇸🇬"; return true;
+		}
+		// 韩国
+		if (raw.includes("韩国") || raw.includes("韓國") || raw.includes("首尔") ||
+			/\bkr\b/.test(lower) ||
+			lower.includes("korea") ||
+			lower.includes("seoul")) {
+		  flag = "🇰🇷"; return true;
+		}
+		// 英国
+		if (raw.includes("英国") || raw.includes("英國") || raw.includes("伦敦") ||
+			/\b(uk|gb)\b/.test(lower) ||
+			lower.includes("britain") ||
+			lower.includes("london")) {
+		  flag = "🇬🇧"; return true;
+		}
+		// 德国
+		if (raw.includes("德国") || raw.includes("德國") ||
+			/\bde\b/.test(lower) ||
+			lower.includes("germany") ||
+			lower.includes("frankfurt")) {
+		  flag = "🇩🇪"; return true;
+		}
+		// 美国
+		if (raw.includes("美国") || raw.includes("美國") ||
+			/\b(us|usa)\b/.test(lower) ||
+			lower.includes("america") ||
+			lower.includes("los angeles") ||
+			/\bla\b/.test(lower) ||
+			/\blax\b/.test(lower)) {
+		  flag = "🇺🇸"; return true;
+		}
+		// 法国
+		if (raw.includes("法国") || raw.includes("法國") ||
+			/\bfr\b/.test(lower) ||
+			lower.includes("france") ||
+			lower.includes("paris")) {
+		  flag = "🇫🇷"; return true;
+		}
+		// 俄罗斯
+		if (raw.includes("俄罗斯") || raw.includes("俄羅斯") || raw.includes("俄") ||
+			/\bru\b/.test(lower) ||
+			lower.includes("russia") ||
+			lower.includes("moscow")) {
+		  flag = "🇷🇺"; return true;
+		}
+		// 土耳其
+		if (raw.includes("土耳其") ||
+			/\btr\b/.test(lower) ||
+			lower.includes("turkey") ||
+			lower.includes("istanbul")) {
+		  flag = "🇹🇷"; return true;
+		}
+		// 泰国
+		if (raw.includes("泰国") || raw.includes("泰國") ||
+			/\bth\b/.test(lower) ||
+			lower.includes("thailand") ||
+			lower.includes("bangkok")) {
+		  flag = "🇹🇭"; return true;
+		}
+		// 荷兰
+		if (raw.includes("荷兰") || raw.includes("荷蘭") ||
+			/\bnl\b/.test(lower) ||
+			lower.includes("netherlands") ||
+			lower.includes("amsterdam")) {
+		  flag = "🇳🇱"; return true;
+		}
+		// 墨西哥
+		if (raw.includes("墨西哥") ||
+			/\bmx\b/.test(lower) ||
+			lower.includes("mexico")) {
+		  flag = "🇲🇽"; return true;
+		}
+		// 卢森堡
+		if (raw.includes("卢森堡") || raw.includes("盧森堡") ||
+			lower.includes("luxembourg") ||
+			lower.includes("luxemburg")) {
+		  flag = "🇱🇺"; return true;
+		}
+		// 拉脱维亚
+		if (raw.includes("拉脱维亚") || raw.includes("拉脫維亞") ||
+			/\blv\b/.test(lower) ||
+			lower.includes("latvia")) {
+		  flag = "🇱🇻"; return true;
+		}
+		// 加拿大
+		if (raw.includes("加拿大") ||
+			/\bca\b/.test(lower) ||
+			lower.includes("canada") ||
+			lower.includes("toronto") ||
+			lower.includes("montreal") ||
+			lower.includes("vancouver")) {
+		  flag = "🇨🇦"; return true;
+		}
+		// 阿根廷
+		if (raw.includes("阿根廷") ||
+			/\bar\b/.test(lower) ||
+			lower.includes("argentina") ||
+			lower.includes("buenos aires")) {
+		  flag = "🇦🇷"; return true;
+		}
+		// 台湾（如果你需要的话）
+		if (raw.includes("台湾") || raw.includes("台灣") ||
+			/\btw\b/.test(lower) ||
+			lower.includes("taiwan") ||
+			lower.includes("taipei")) {
+		  flag = "🇹🇼"; return true;
+		}
+
+		return false;
+	  }
+
+	  // 先用“最终节点名”本身匹配
+	  if (!matchRegion(displayLower, name)) {
+		// 匹配不到再用 节点名 + host 一起猜
+		matchRegion(allLower, allText);
+	  }
+
+	  return `${flag} ${name}`;
+	}
+
+
+
+    // 解析单个 VLESS 链接 -> 节点对象
+    function parseVless(urlStr) {
+      // 兼容含有前后空白或其它文本
+      const idx = urlStr.indexOf("vless://");
+      if (idx === -1) return null;
+      const raw = urlStr.slice(idx).trim();
+
+      let url;
+      try {
+        url = new URL(raw);
+      } catch {
+        return null;
+      }
+      if (url.protocol !== "vless:") return null;
+
+      const uuid = url.username || url.pathname.replace("/", "");
+      const host = url.hostname;
+      const port = url.port || "443";
+      const qp = url.searchParams;
+
+      const security = qp.get("security") || "";
+      const network = qp.get("type") || "tcp";
+      const encryption = qp.get("encryption") || "none";
+      const pbk = qp.get("pbk") || "";
+      const fp = qp.get("fp") || "chrome";
+      const sni = qp.get("sni") || host;
+      const sid = qp.get("sid") || "";
+      const spx = qp.get("spx") || "";
+      const flow = qp.get("flow") || (security === "reality" ? "xtls-rprx-vision" : "");
+
+      // 取 hash（可能包含多个 #），并只保留最后一段作为显示名称
+	  const rawHash = decodeURIComponent((url.hash || "").replace(/^#/, ""));
+	  let displayName = "";
+
+	  if (rawHash) {
+	    // 支持形如 "#admin-xxx#美国洛杉矶" 的格式，取最后一段
+	    const segments = rawHash.split("#").filter(Boolean);
+	    displayName = segments[segments.length - 1] || "";
+	  }
+
+	  // 有备注就用备注，否则回退到 host:port
+	  const baseName = displayName || (host + ":" + port);
+	  const name = prettyName(baseName, host);
+
+
+      return {
+        name,
+        uuid,
+        host,
+        port,
+        security,
+        network,
+        encryption,
+        pbk,
+        fp,
+        sni,
+        sid,
+        spx,
+        flow
+      };
+    }
+
+    // 生成 proxies: 下的 YAML
+    function buildProxiesYaml(nodes) {
+      if (!nodes.length) return "  # 无可用节点，未生成 proxies\n";
+      const lines = nodes.map(n => {
+        const parts = [];
+        parts.push(`name: ${q(n.name)}`);
+        parts.push(`type: vless`);
+        parts.push(`server: ${q(n.host)}`);
+        parts.push(`port: ${n.port}`);
+        parts.push(`uuid: ${q(n.uuid)}`);
+        // 一般 reality 都要 tls: true
+        parts.push(`tls: ${n.security ? "true" : "false"}`);
+        parts.push(`skip-cert-verify: false`);
+        if (n.flow) parts.push(`flow: ${q(n.flow)}`);
+        parts.push(`client-fingerprint: ${q(n.fp)}`);
+        parts.push(`tfo: false`);
+        if (n.sni) parts.push(`servername: ${q(n.sni)}`);
+        if (n.network) parts.push(`network: ${q(n.network)}`);
+        if (n.security === "reality" && n.pbk) {
+          const inner = [];
+          inner.push(`public-key: ${q(n.pbk)}`);
+          if (n.sid) inner.push(`short-id: ${q(n.sid)}`);
+          parts.push(`reality-opts: { ${inner.join(", ")} }`);
+        }
+        return "  - { " + parts.join(", ") + " }";
+      });
+      return lines.join("\n") + "\n";
+    }
+
+    // 生成 proxy-groups: YAML，节点列表动态插入
+    function buildProxyGroupsYaml(nodes) {
+      const names = nodes.map(n => n.name);
+      const indent = (n) => " ".repeat(n);
+      const list = (items, baseIndent) =>
+        items.map(it => `${indent(baseIndent)}- ${it}`).join("\n");
+
+      const lines = [];
+      lines.push("proxy-groups:");
+      // 🚀 节点代理
+      lines.push(`${indent(2)}- name: 🚀 节点代理`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(list(["♻️ 自动选择", ...names, "DIRECT"], 6) || `${indent(6)}- DIRECT`);
+
+      // 🌍 国外媒体
+      lines.push(`${indent(2)}- name: 🌍 国外媒体`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(list(["🚀 节点代理", ...names], 6) || `${indent(6)}- 🚀 节点代理`);
+
+      // 📲 电报信息
+      lines.push(`${indent(2)}- name: 📲 电报信息`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(list(["🚀 节点代理", ...names], 6) || `${indent(6)}- 🚀 节点代理`);
+
+      // 📢 谷歌FCM
+      lines.push(`${indent(2)}- name: 📢 谷歌FCM`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(list(["🚀 节点代理", ...names], 6) || `${indent(6)}- 🚀 节点代理`);
+
+      // 🐟 漏网之鱼
+      lines.push(`${indent(2)}- name: 🐟 漏网之鱼`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(list(["🚀 节点代理", "🎯 绕过代理"], 6));
+
+      // ♻️ 自动选择
+      lines.push(`${indent(2)}- name: ♻️ 自动选择`);
+      lines.push(`${indent(4)}type: url-test`);
+      lines.push(`${indent(4)}url: http://www.gstatic.com/generate_204`);
+      lines.push(`${indent(4)}interval: 1800`);
+      lines.push(`${indent(4)}lazy: true`);
+      lines.push(`${indent(4)}tolerance: 50`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(
+        names.length
+          ? list(names, 6)
+          : `${indent(6)}- 🚀 节点代理`
+      );
+
+      // 🎯 绕过代理
+      lines.push(`${indent(2)}- name: 🎯 绕过代理`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(`${indent(6)}- DIRECT`);
+
+      // 🚧 屏蔽访问
+      lines.push(`${indent(2)}- name: 🚧 屏蔽访问`);
+      lines.push(`${indent(4)}type: select`);
+      lines.push(`${indent(4)}proxies:`);
+      lines.push(`${indent(6)}- REJECT`);
+
+      return lines.join("\n") + "\n";
+    }
+
+    // 绑定事件
+    const inputEl = document.getElementById("input");
+    const outputEl = document.getElementById("output");
+    const statusEl = document.getElementById("status");
+    const copyStatusEl = document.getElementById("copyStatus");
+    const convertBtn = document.getElementById("convertBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const copyBtn = document.getElementById("copyBtn");
+
+    convertBtn.addEventListener("click", () => {
+      statusEl.textContent = "";
+      copyStatusEl.textContent = "";
+
+      const raw = inputEl.value.trim();
+      if (!raw) {
+        statusEl.textContent = "请输入至少一个 vless 链接。";
+        statusEl.className = "status error";
+        return;
+      }
+
+      const pieces = raw.split(/\s+/);
+      const nodes = [];
+      for (const piece of pieces) {
+        if (!piece.includes("vless://")) continue;
+        const node = parseVless(piece);
+        if (node) nodes.push(node);
+      }
+
+      if (!nodes.length) {
+        statusEl.textContent = "未能解析出有效的 vless 链接，请检查格式。";
+        statusEl.className = "status error";
+        outputEl.value = "";
+        return;
+      }
+
+      const proxiesYaml = buildProxiesYaml(nodes);
+      const groupsYaml = buildProxyGroupsYaml(nodes);
+      const finalYaml = [
+        YAML_HEADER,
+        proxiesYaml.trimEnd(),
+        "",
+        groupsYaml.trimEnd(),
+        "",
+        YAML_RULES
+      ].join("\n");
+
+      outputEl.value = finalYaml;
+      statusEl.textContent = `已成功生成 YAML，节点数：${nodes.length}`;
+      statusEl.className = "status success";
+    });
+
+    clearBtn.addEventListener("click", () => {
+      inputEl.value = "";
+      statusEl.textContent = "";
+      copyStatusEl.textContent = "";
+    });
+
+    copyBtn.addEventListener("click", async () => {
+      copyStatusEl.textContent = "";
+      const text = outputEl.value.trim();
+      if (!text) {
+        copyStatusEl.textContent = "没有可以复制的内容。";
+        copyStatusEl.className = "status error";
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        copyStatusEl.textContent = "已复制到剪贴板。";
+        copyStatusEl.className = "status success";
+      } catch (e) {
+        // 兼容不支持 Clipboard API 的环境
+        outputEl.select();
+        document.execCommand("copy");
+        copyStatusEl.textContent = "已尝试复制（如失败请手动复制）。";
+        copyStatusEl.className = "status";
+      }
+    });
+  </script>
+</body>
+</html>
